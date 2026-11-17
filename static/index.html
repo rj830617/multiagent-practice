@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Noida Research Agent</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+  h1 { font-size: 1.4rem; }
+  label { font-weight: 600; display: block; margin-top: 1rem; }
+  select, input, button { font-size: 1rem; padding: 0.5rem; margin-top: 0.25rem; }
+  input[type=text] { width: 100%; box-sizing: border-box; }
+  button { margin-top: 1rem; cursor: pointer; }
+  #status { margin-top: 1rem; font-style: italic; color: #666; }
+  #map { height: 320px; margin-top: 1rem; border-radius: 8px; display: none; }
+  #map-note { font-size: 0.85rem; color: #666; display: none; }
+  #report { margin-top: 1.5rem; border-top: 1px solid #ccc; padding-top: 1rem; }
+  #errors { color: #b00020; margin-top: 0.5rem; }
+  pre { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h1>Noida Research Agent</h1>
+  <p>Query-based, sector-based, or city-based research over News, Weather, and Traffic for Noida.</p>
+
+  <label for="mode">Research mode</label>
+  <select id="mode">
+    <option value="query">Query-based</option>
+    <option value="sector">Sector-based</option>
+    <option value="city" selected>City-based</option>
+  </select>
+
+  <label for="input_text">Input</label>
+  <input id="input_text" type="text" value="Noida" placeholder="e.g. Sector 62, Noida / Assess infrastructure around Sector 150" />
+
+  <button id="submit">Run research</button>
+  <div id="status"></div>
+  <div id="errors"></div>
+  <div id="map"></div>
+  <div id="map-note"></div>
+  <div id="report"></div>
+
+<script>
+let leafletMap = null;
+
+async function runResearch() {
+  const mode = document.getElementById('mode').value;
+  const input_text = document.getElementById('input_text').value.trim();
+  const statusEl = document.getElementById('status');
+  const errorsEl = document.getElementById('errors');
+  const reportEl = document.getElementById('report');
+  const mapEl = document.getElementById('map');
+  const mapNoteEl = document.getElementById('map-note');
+
+  errorsEl.textContent = '';
+  reportEl.innerHTML = '';
+  statusEl.textContent = 'Running research pipeline (intent parsing -> plan -> tools -> synthesis -> report)...';
+
+  try {
+    const resp = await fetch('/research', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, input_text }),
+    });
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.detail || `Request failed: ${resp.status}`);
+    }
+    const data = await resp.json();
+    statusEl.textContent = `Run ${data.run_id} - location: ${data.location_label}`;
+
+    if (data.errors && data.errors.length) {
+      errorsEl.textContent = 'Partial failures: ' + data.errors.join(' | ');
+    }
+
+    reportEl.innerHTML = window.marked ? marked.parse(data.report_markdown) : `<pre>${data.report_markdown}</pre>`;
+
+    if (data.lat != null && data.lon != null && window.L) {
+      mapEl.style.display = 'block';
+      mapNoteEl.style.display = 'block';
+      mapNoteEl.textContent = 'Bonus demo map (2D, OpenStreetMap tiles). A 3D building view would require a Mapbox token - not configured in this prototype.';
+      if (!leafletMap) {
+        leafletMap = L.map('map');
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors',
+        }).addTo(leafletMap);
+      }
+      leafletMap.setView([data.lat, data.lon], 13);
+      leafletMap.eachLayer((layer) => { if (layer instanceof L.Marker) leafletMap.removeLayer(layer); });
+      L.marker([data.lat, data.lon]).addTo(leafletMap).bindPopup(data.location_label).openPopup();
+      setTimeout(() => leafletMap.invalidateSize(), 100);
+    }
+  } catch (err) {
+    statusEl.textContent = '';
+    errorsEl.textContent = 'Error: ' + err.message;
+  }
+}
+
+document.getElementById('submit').addEventListener('click', runResearch);
+</script>
+</body>
+</html>
