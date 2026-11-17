@@ -120,14 +120,14 @@ async def node_report(state: AgentState) -> dict[str, Any]:
 def build_graph():
     graph = StateGraph(AgentState)
     graph.add_node("parse_intent", node_parse_intent)
-    graph.add_node("plan", node_plan)
+    graph.add_node("create_plan", node_plan)
     graph.add_node("orchestrate", node_orchestrate)
     graph.add_node("synthesize", node_synthesize)
     graph.add_node("report", node_report)
 
     graph.set_entry_point("parse_intent")
-    graph.add_edge("parse_intent", "plan")
-    graph.add_edge("plan", "orchestrate")
+    graph.add_edge("parse_intent", "create_plan")
+    graph.add_edge("create_plan", "orchestrate")
     graph.add_edge("orchestrate", "synthesize")
     graph.add_edge("synthesize", "report")
     graph.add_edge("report", END)
